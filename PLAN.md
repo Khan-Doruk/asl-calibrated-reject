@@ -60,6 +60,23 @@ The defensible wording is:
 Conformal prediction appears genuinely untouched in sign language and gesture
 recognition, and is the strongest fully open claim available.
 
+### Stage 1 support for this framing
+
+Stage 1 tested the premise directly rather than asserting it. Holding model,
+features, seeds and training volume fixed, moving from a signer-disjoint split
+to WLASL's standard split moves top-1 from 0.232 to 0.342. The mechanism is
+measurable: **98% of the standard test set (125 of 128 clips) comes from a
+signer present in training.**
+
+Two honest limits on that claim. The +0.110 is an **upper bound** — the two
+protocols define different test sets, so it mixes signer overlap with test-set
+difficulty, and this pool cannot separate them (both de-confounding designs are
+infeasible; see RESULTS.md). And calibration itself did **not** degrade on the
+standard split once bootstrap intervals are accounted for, so "standard splits
+break calibration" is not a claim we can make. What we can say is that the
+standard protocol overstates accuracy, and that the model stays overconfident
+under both.
+
 ### Related work we must cite ourselves
 
 A reviewer in this area will know at least one of these. Citing them first is
@@ -91,12 +108,29 @@ Published WLASL100 top-1, **standard split**, trained from scratch on pose:
 With large-scale pretraining: VideoMAE 75.58 (Kinetics-400), SignBERT+ 79.84,
 MASA 83.72, NLA-SLR 91.47, Uni-Sign 92.24 (pretrained on ~1985 h of video–text).
 
-**Our 0.232 is not comparable to any of these.** Two reasons: the split is
-signer-disjoint rather than standard, and holding out whole signers plus a
-calibration split leaves ~616 training clips (~6 per class) against roughly 1400
-in the standard split. No published WLASL result we could find reports a
-signer-disjoint number, so there is currently nothing to compare against on this
-protocol.
+**Our numbers are not comparable to any of these, and stage 1 showed the reason
+is worse than we thought.**
+
+The original reason given here was the split protocol plus training volume
+(~616 clips against "roughly 1400"). That 1400 is the *official* WLASL100 train
+count. Our pool does not contain it. Measured in stage 1:
+
+- Our 100 glosses were selected as the most-represented **on the HuggingFace
+  mirror**, not from the official WLASL100 list. They overlap it by **58/100**.
+- We hold **678 of the official benchmark's 2038 videos**, and only **1007 (49%)
+  of them exist on the mirror at all**, so rebuilding the official list would
+  still not close the gap.
+- The standard split *within our pool* is 806/186/128 train/val/test, so after
+  carving a calibration set it gives **638** training clips, not ~1400.
+
+So neither protocol produces a number that can sit beside Pose-GRU (46.51) or
+ST-GCN (50.78). Stage 1's standard-split result (0.383) is above our
+signer-disjoint 0.232 but below the published band, and the shortfall is
+explained by pool size and vocabulary, not only by the model.
+
+Getting a genuinely comparable number would need a different data source than
+the current mirror. Until then, published WLASL100 figures are context, not a
+target to be measured against.
 
 Two notes on using these numbers:
 
@@ -145,7 +179,7 @@ summarising at the end — if something breaks we need to know which stage.
 
 | # | Experiment | Compute | Purpose |
 |---|---|---|---|
-| 1 | Identical model on WLASL's **standard split** | CPU | The missing comparison. The gap against our signer-disjoint number is the headline result. |
+| 1 | Identical model on WLASL's **standard split** | CPU | **Done — see RESULTS.md.** Protocol gap +0.110 (0.232 → 0.342) with training volume held equal. 98% of the standard test set is signers the model trained on. |
 | 2 | Input quality: hand-detection rate (currently 0.693 vs 0.76–0.80 typical), frames per clip 24 → 32/48, review normalization | CPU | SignBart reports +13.5% from normalization alone. Cheap and it gates everything downstream. |
 | 3 | Fine-tune a pretrained model — VideoMAE (Kinetics-400) as the low-risk path, a SignBERT+/BEST/MASA skeleton encoder if checkpoints prove obtainable | GPU | Pretraining is worth roughly +25 points; architecture alone is +5–9. Target a *credible* baseline (~70–75), not SOTA. |
 | 4 | Best model from stage 3, evaluated signer-disjoint | GPU | The actual research question. |
@@ -175,7 +209,7 @@ per class.
 |---|---|
 | **No ASL-fluent consultant.** Nobody on the team signs. Needed to sanity-check vocabulary selection and to interpret error analysis. | Open. First action is NJIT accessibility services or a local ASL program. |
 | **SIGMA-ASL access.** Fusion has no data without it. | Authors contacted; no reply yet. |
-| **Accuracy credibility.** Calibration analysis on a 23% model is not convincing. | Addressed by roadmap stages 1–3. |
+| **Accuracy credibility.** Calibration analysis on a 23% model is not convincing. | **Narrowed, not closed.** Stage 1 shows 0.232 is largely a protocol artefact: the same model scores 0.383 on the standard split. But our pool is not the official WLASL100 (58/100 glosses), so no number from it is publication-comparable. Stages 2–3 still needed. |
 | **Domain gap.** SIGMA-ASL was recorded in a studio with an Azure Kinect; any live demo would use consumer hardware. | Measure it, do not hide it. |
 | **Per-signer finding may not exist.** Stage 5 may show low variance. | Report it either way. |
 
