@@ -1,0 +1,16 @@
+# ---- not redistributed: WLASL-derived data (C-UDA, see DATA.md) ----
+data/WLASL_v0.3.json
+data/landmarks.npz
+data/matched.json
+data/subset.json
+data/hf_files.json
+data/download_failures.json
+
+# ---- third-party model bundles (Google/Apache-2.0); fetched by setup ----
+models/
+
+# ---- local caches ----
+__pycache__/
+*.pyc
+.venv/
+venv/

@@ -1,0 +1,74 @@
+[
+  {
+    "coverage": 0.2,
+    "accuracy": 0.4318181818181818,
+    "claimed_before": 0.755871620811848,
+    "claimed_after": 0.48135656610921806,
+    "tau_before": 0.605525966600252,
+    "tau_after": 0.3522036182166335
+  },
+  {
+    "coverage": 0.3,
+    "accuracy": 0.3283582089552239,
+    "claimed_before": 0.6917170002251353,
+    "claimed_after": 0.4271405970139539,
+    "tau_before": 0.5363193440794329,
+    "tau_after": 0.30540427340226894
+  },
+  {
+    "coverage": 0.4,
+    "accuracy": 0.30337078651685395,
+    "claimed_before": 0.644023148481702,
+    "claimed_after": 0.3925553411256892,
+    "tau_before": 0.46431372091882256,
+    "tau_after": 0.27383658925514553
+  },
+  {
+    "coverage": 0.5,
+    "accuracy": 0.3125,
+    "claimed_before": 0.5992630718550567,
+    "claimed_after": 0.36336196327255516,
+    "tau_before": 0.39546795164962145,
+    "tau_after": 0.2304708673801495
+  },
+  {
+    "coverage": 0.6,
+    "accuracy": 0.29850746268656714,
+    "claimed_before": 0.562495126282092,
+    "claimed_after": 0.3397173174264464,
+    "tau_before": 0.3517662356589419,
+    "tau_after": 0.20918670429627093
+  },
+  {
+    "coverage": 0.7,
+    "accuracy": 0.2564102564102564,
+    "claimed_before": 0.5291073196103526,
+    "claimed_after": 0.31935614450791927,
+    "tau_before": 0.30196034637627267,
+    "tau_after": 0.185216231746045
+  },
+  {
+    "coverage": 0.8,
+    "accuracy": 0.24022346368715083,
+    "claimed_before": 0.49696619727111546,
+    "claimed_after": 0.3001107578706126,
+    "tau_before": 0.25869255301944166,
+    "tau_after": 0.15682010229620424
+  },
+  {
+    "coverage": 0.9,
+    "accuracy": 0.22388059701492538,
+    "claimed_before": 0.4685457563962531,
+    "claimed_after": 0.2830362028027986,
+    "tau_before": 0.21955296553772052,
+    "tau_after": 0.13290297794422987
+  },
+  {
+    "coverage": 1.0,
+    "accuracy": 0.22321428571428573,
+    "claimed_before": 0.4395210743204041,
+    "claimed_after": 0.2657444402807564,
+    "tau_before": 0.11283169828207526,
+    "tau_after": 0.07139394740276399
+  }
+]
