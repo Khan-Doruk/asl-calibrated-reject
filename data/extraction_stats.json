@@ -1,1 +1,8 @@
-{"n_extracted": 1120, "n_requested": 1120, "pose_rate": 0.990, "hand_rate": 0.693, "clips_zero_hands": 0, "frames_per_clip": 24}
+{
+  "n_extracted": 1120,
+  "n_requested": 1120,
+  "pose_rate": 0.9896949404761904,
+  "hand_rate": 0.6933407738095239,
+  "clips_zero_hands": 0,
+  "frames_per_clip": 24
+}
