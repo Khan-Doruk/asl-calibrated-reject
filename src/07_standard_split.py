@@ -77,7 +77,17 @@ def stratified_take(pool, labels, n_take, rng, protect_min=1):
             raise RuntimeError(
                 f"cannot take {n_take} from {len(pool)} while leaving "
                 f"{protect_min} of each of {len(by)} labels behind")
-    taken = taken[:n_take]
+    # Guard, not a fix. Rounding quotas independently can overshoot n_take, and
+    # this function used to truncate silently here, zeroing whole labels. The
+    # committed stage-1 runs never overshot (B's quotas summed to 163 of 168, C's
+    # to 0 of 22), so the guard leaves their selections - and the committed
+    # JSON - unchanged. New code uses src/stratify.py (largest-remainder), which
+    # selects different clips, so it is deliberately not swapped in here.
+    assert len(taken) == n_take, (
+        f"quota overshoot: {len(taken)} taken for n_take={n_take}; "
+        "use src/stratify.py")
+    left = collections.Counter(labels[i] for i in set(pool) - set(taken))
+    assert all(left[k] >= protect_min for k in by), "a label fell below protect_min"
     tset = set(taken)
     return sorted(tset), sorted(set(pool) - tset)
 

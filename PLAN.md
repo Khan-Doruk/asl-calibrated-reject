@@ -13,7 +13,9 @@ signer can appear in both training and test. On a signer-disjoint split the
 same model collapses — and it stays confidently wrong while it does. On our
 test split the model reports a mean confidence of 0.476 while scoring 0.232.
 
-Global temperature scaling cuts calibration error by 68%, but it applies one
+Global temperature scaling cuts calibration error substantially (68% on the
+committed split, 52–69% across five re-drawn signer-disjoint splits; stage 1b),
+but it applies one
 scalar to every signer. The project asks whether calibration should instead be
 conditioned on signing quality, and whether a calibrated reject option makes an
 otherwise unusable model usable.
@@ -76,6 +78,14 @@ standard split once bootstrap intervals are accounted for, so "standard splits
 break calibration" is not a claim we can make. What we can say is that the
 standard protocol overstates accuracy, and that the model stays overconfident
 under both.
+
+**Stage 1b** re-drew both sides of that comparison (5 signer-disjoint draws, 5
+standard-split draws, 5 model seeds each). The gap holds up: +0.123 averaged over
+all 25 pairings, range +0.052 to +0.162, positive on every pairing. It is still an
+upper bound for the reason above, but it is not an artefact of one lucky split.
+A matched-validation control moved it by 0.001, so the standard split's larger,
+test-overlapping validation set is not what produces it. The draws share one
+clip pool, so these ranges are descriptive, not confidence intervals.
 
 ### Related work we must cite ourselves
 
@@ -179,7 +189,7 @@ summarising at the end — if something breaks we need to know which stage.
 
 | # | Experiment | Compute | Purpose |
 |---|---|---|---|
-| 1 | Identical model on WLASL's **standard split** | CPU | **Done — see RESULTS.md.** Protocol gap +0.110 (0.232 → 0.342) with training volume held equal. 98% of the standard test set is signers the model trained on. |
+| 1 | Identical model on WLASL's **standard split** | CPU | **Done — see RESULTS.md.** Protocol gap +0.110 (0.232 → 0.342) with training volume held equal. 98% of the standard test set is signers the model trained on. **1b:** holds across re-drawn splits, +0.123 (range +0.052 to +0.162); epoch selection contributes +0.001. |
 | 2 | Input quality: hand-detection rate (currently 0.693 vs 0.76–0.80 typical), frames per clip 24 → 32/48, review normalization | CPU | SignBart reports +13.5% from normalization alone. Cheap and it gates everything downstream. |
 | 3 | Fine-tune a pretrained model — VideoMAE (Kinetics-400) as the low-risk path, a SignBERT+/BEST/MASA skeleton encoder if checkpoints prove obtainable | GPU | Pretraining is worth roughly +25 points; architecture alone is +5–9. Target a *credible* baseline (~70–75), not SOTA. |
 | 4 | Best model from stage 3, evaluated signer-disjoint | GPU | The actual research question. |
@@ -212,6 +222,9 @@ per class.
 | **Accuracy credibility.** Calibration analysis on a 23% model is not convincing. | **Narrowed, not closed.** Stage 1 shows 0.232 is largely a protocol artefact: the same model scores 0.383 on the standard split. But our pool is not the official WLASL100 (58/100 glosses), so no number from it is publication-comparable. Stages 2–3 still needed. |
 | **Domain gap.** SIGMA-ASL was recorded in a studio with an Azure Kinect; any live demo would use consumer hardware. | Measure it, do not hide it. |
 | **Per-signer finding may not exist.** Stage 5 may show low variance. | Report it either way. |
+| **Headline calibration numbers come from a favourable split.** README's 0.247 → 0.079 is below the ECE range of all five re-drawn signer-disjoint splits (before 0.275–0.449, after 0.086–0.210). | **Open.** Quote the stage 1b draw range in any write-up, not the single committed draw. README is left as the committed baseline record. |
+| **Split assignment is a large noise source.** Signer-disjoint accuracy ranges 0.205–0.299 across draws; model-seed spread alone understates this. | **Open.** Stages 4–6 should report over multiple split draws, not one. |
+| **Bit-reproducibility is machine-dependent.** Torch CPU results change with thread count. | Mitigated: src/10 pins threads and checks a reference run. Earlier scripts do not pin; teammates may see small differences from committed numbers. |
 
 ### On wearables
 
@@ -236,7 +249,7 @@ among engineers.
 
 | Decision | Why |
 |---|---|
-| Signer-disjoint split, four ways | A random clip split leaks signer identity and inflates both accuracy and apparent calibration. Calibration and test use different unseen signers so the temperature is never tuned on the condition it is credited with handling. |
+| Signer-disjoint split, four ways | A random clip split leaks signer identity and inflates both accuracy and apparent calibration. Calibration and test use different unseen signers so the temperature is never tuned on the condition it is credited with handling. Stage 1b showed one draw is not enough: results are reported over several. |
 | Camera-only for now | SIGMA-ASL is inaccessible; WLASL works. The calibration contribution does not require fusion. |
 | BiGRU over a transformer | Correct for ~6 clips per class; see above. |
 | Landmarks over raw RGB, for the fast loop | CPU-friendly, iterates in minutes. RGB re-enters at stage 3 via a pretrained model. |

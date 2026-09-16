@@ -13,17 +13,19 @@ pool of 1120 clips over 100 glosses. Only the split assignment varies.
 Condition A reproduced the committed baseline **bit-identically**, seed for
 seed, which is what makes the three columns comparable.
 
-| | split | train | test | signers shared train↔test | top-1 | ECE before | ECE after | T* |
-|---|---|---|---|---|---|---|---|---|
-| **A** | signer-disjoint (committed baseline) | 616 | 224 | 0 | 0.232 ± 0.024 | 0.247 ± 0.031 | 0.079 ± 0.010 | 1.58 ± 0.10 |
-| **B** | WLASL standard split, cal carved from train | 638 | 128 | 36 | 0.383 ± 0.023 | 0.231 ± 0.036 | 0.126 ± 0.013 | 1.85 ± 0.15 |
-| **C** | standard split, train subsampled to 616 to match A | 616 | 128 | 36 | 0.342 ± 0.019 | 0.270 ± 0.041 | 0.106 ± 0.028 | 1.93 ± 0.16 |
+| | split | train | labelled (train+val+cal) | test | signers shared train↔test | top-1 | ECE before | ECE after | T* |
+|---|---|---|---|---|---|---|---|---|---|
+| **A** | signer-disjoint (committed baseline) | 616 | 896 | 224 | 0 | 0.232 ± 0.024 | 0.247 ± 0.031 | 0.079 ± 0.010 | 1.58 ± 0.10 |
+| **B** | WLASL standard split, cal carved from train | 638 | 992 | 128 | 36 | 0.383 ± 0.023 | 0.231 ± 0.036 | 0.126 ± 0.013 | 1.85 ± 0.15 |
+| **C** | standard split, train subsampled to 616 to match A | 616 | 970 | 128 | 36 | 0.342 ± 0.019 | 0.270 ± 0.041 | 0.106 ± 0.028 | 1.93 ± 0.16 |
 
 ### What it says
 
-**The protocol gap is +0.110** — 0.232 (A) → 0.342 (C) with training volume
-held equal at 616 vs 616 clips. Moving from a signer-disjoint split to WLASL's
-standard split, changing nothing else, buys about 11 points.
+**The protocol gap is +0.110** — 0.232 (A) → 0.342 (C) with the
+*weight-fitting* set held equal at 616 vs 616 clips. That is not all the labelled
+data each condition consumes: counting val and cal, A uses 896 clips and C uses
+970, and C's larger validation set drives epoch selection. Stage 1b tests
+whether that matters.
 
 **B vs C is not a real difference.** They differ by 22 training clips and
 +0.041 accuracy, which is ~5 clips on a 128-clip test set, against seed
@@ -32,8 +34,10 @@ in this pool holds 806 train clips, so after carving a calibration set it
 offers almost no volume advantage over A — the confound C was built to control
 is nearly absent.
 
-**Calibration behaves the same under both protocols.** Every condition is
-overconfident before scaling (0.247, 0.231, 0.270) and improves after. Residual ECE
+**Every condition is overconfident before scaling** (ECE 0.247, 0.231, 0.270).
+Whether scaling *reduces* ECE is established only where the seed-0 bootstrap interval on the reduction excludes zero. It does for A [41.2%, 71.2%], C [27.8%, 75.7%]. It does **not** for B [-19.2%, 63.7%], so improvement there is not established on this test set.
+
+Residual ECE
 looks worse on the standard split (0.079 vs 0.106), but the bootstrap
 intervals overlap — A [0.061, 0.139] against C [0.082, 0.199] — and C's test
 set is only 128 clips. **Do not claim calibration transfers worse on the standard
@@ -46,7 +50,12 @@ protocol defines its own. So +0.110 mixes signer overlap with test-set
 difficulty, and is an **upper bound** on the signer-overlap effect, not a
 measurement of it.
 
-Two designs would isolate it, and neither is possible on this pool:
+A second overlap cannot be removed within the standard split: C's validation
+set shares 33 signers with its test set, and validation picks the epoch.
+Stage 1b's condition D measures how much that selection signal is worth.
+
+Two designs would isolate the signer-overlap effect, and neither is possible on
+this pool:
 
 - *Train on signers disjoint from the standard test set.* The standard test set
   draws on 39 of the pool's signers, leaving only
@@ -87,7 +96,8 @@ train 616/20sig/100gl · val 112/15sig/67gl · cal 168/16sig/81gl · test 224/17
 
 Seed-0 bootstrap 95% CIs — top-1 [0.170, 0.281] ·
 ECE before [0.181, 0.280] ·
-ECE after [0.061, 0.139]
+ECE after [0.061, 0.139] ·
+ECE reduction [41.2%, 71.2%]
 #### B — WLASL standard split, cal carved from train
 
 train 638/61sig/100gl · val 186/47sig/97gl · cal 168/41sig/100gl · test 128/39sig/85gl
@@ -102,7 +112,8 @@ train 638/61sig/100gl · val 186/47sig/97gl · cal 168/41sig/100gl · test 128/3
 
 Seed-0 bootstrap 95% CIs — top-1 [0.281, 0.445] ·
 ECE before [0.161, 0.293] ·
-ECE after [0.093, 0.219]
+ECE after [0.093, 0.219] ·
+ECE reduction [-19.2%, 63.7%]
 #### C — standard split, train subsampled to 616 to match A
 
 train 616/59sig/100gl · val 186/47sig/97gl · cal 168/41sig/100gl · test 128/39sig/85gl
@@ -117,4 +128,81 @@ train 616/59sig/100gl · val 186/47sig/97gl · cal 168/41sig/100gl · test 128/3
 
 Seed-0 bootstrap 95% CIs — top-1 [0.273, 0.438] ·
 ECE before [0.243, 0.396] ·
-ECE after [0.082, 0.199]
+ECE after [0.082, 0.199] ·
+ECE reduction [27.8%, 75.7%]
+
+---
+
+## Stage 1b — how much of the gap is the split we happened to draw?
+
+Stage 1's ± was model-seed spread only: A and C were each **one** split draw. Here
+both are re-drawn 5 times, with 5 model seeds per draw.
+
+- **A draws** — src/03's greedy with the signer order shuffled. A draw is rejected
+  and redrawn if train misses a gloss, or if any split lands more than
+  10 clips from its target. The size check matters: shuffling alone let one
+  very large signer swing the train set by dozens of clips, mixing *who* is in
+  train with *how much* data it holds. Keeping sizes exact by sorting big-first
+  instead pinned that signer to train on almost every draw, which would never
+  test the assignments this experiment is about. Rejection avoids both.
+- **C draws** — WLASL's split is fixed upstream, so only the calibration
+  carve-out and the train subsample are re-drawn.
+- **D draws** — each C draw with validation subsampled to 112 clips, A's size.
+
+**These draws share one 1120-clip pool and are not independent.** Every spread below
+is descriptive. None of it is a confidence interval.
+
+Torch CPU numerics depend on thread count, so this run pins 24 threads. A
+reference run under these settings **reproduces** the committed baseline
+(T* 1.521445 vs 1.521445). A machine with a different thread count
+will not match these numbers bit for bit.
+
+### Per draw (mean ± sd over model seeds)
+
+| draw | train | val | cal | test | labelled | val↔test signers | top-1 | ECE before | ECE after |
+|---|---|---|---|---|---|---|---|---|---|
+| A0 | 613 | 113 | 169 | 225 | 895 | 0 | 0.205 ± 0.023 | 0.412 ± 0.018 | 0.196 ± 0.019 |
+| A1 | 619 | 121 | 162 | 218 | 902 | 0 | 0.299 ± 0.024 | 0.275 ± 0.035 | 0.086 ± 0.016 |
+| A2 | 621 | 112 | 170 | 217 | 903 | 0 | 0.217 ± 0.024 | 0.449 ± 0.042 | 0.210 ± 0.017 |
+| A3 | 615 | 112 | 176 | 217 | 903 | 0 | 0.246 ± 0.017 | 0.314 ± 0.016 | 0.099 ± 0.015 |
+| A4 | 625 | 109 | 170 | 216 | 904 | 0 | 0.206 ± 0.014 | 0.367 ± 0.038 | 0.147 ± 0.006 |
+| C0 | 616 | 186 | 168 | 128 | 970 | 33 | 0.367 ± 0.022 | 0.269 ± 0.038 | 0.125 ± 0.013 |
+| C1 | 616 | 186 | 168 | 128 | 970 | 33 | 0.356 ± 0.029 | 0.263 ± 0.045 | 0.114 ± 0.026 |
+| C2 | 616 | 186 | 168 | 128 | 970 | 33 | 0.353 ± 0.029 | 0.282 ± 0.039 | 0.130 ± 0.031 |
+| C3 | 616 | 186 | 168 | 128 | 970 | 33 | 0.362 ± 0.025 | 0.261 ± 0.018 | 0.118 ± 0.014 |
+| C4 | 616 | 186 | 168 | 128 | 970 | 33 | 0.352 ± 0.013 | 0.278 ± 0.034 | 0.099 ± 0.013 |
+| D0 | 616 | 112 | 168 | 128 | 896 | 28 | 0.370 ± 0.022 | 0.251 ± 0.038 | 0.124 ± 0.011 |
+| D1 | 616 | 112 | 168 | 128 | 896 | 32 | 0.361 ± 0.031 | 0.263 ± 0.039 | 0.126 ± 0.031 |
+| D2 | 616 | 112 | 168 | 128 | 896 | 30 | 0.359 ± 0.025 | 0.260 ± 0.037 | 0.111 ± 0.023 |
+| D3 | 616 | 112 | 168 | 128 | 896 | 30 | 0.356 ± 0.022 | 0.242 ± 0.025 | 0.109 ± 0.012 |
+| D4 | 616 | 112 | 168 | 128 | 896 | 29 | 0.350 ± 0.013 | 0.291 ± 0.013 | 0.101 ± 0.017 |
+
+### Across draws (mean · sd · [min, max] of per-draw means)
+
+| | top-1 | ECE before | ECE after | stage 1 single draw |
+|---|---|---|---|---|
+| A | 0.235 · sd 0.040 · [0.205, 0.299] | 0.363 · sd 0.071 · [0.275, 0.449] | 0.148 · sd 0.055 · [0.086, 0.210] | 0.232 |
+| C | 0.358 · sd 0.007 · [0.352, 0.367] | 0.270 · sd 0.009 · [0.261, 0.282] | 0.117 · sd 0.012 · [0.099, 0.130] | 0.342 |
+| D | 0.359 · sd 0.007 · [0.350, 0.370] | 0.261 · sd 0.018 · [0.242, 0.291] | 0.114 · sd 0.010 · [0.101, 0.126] | — |
+
+### What it says
+
+**Split assignment.** The per-draw means of A spread by sd 0.040. Seed noise alone would spread them by about 0.009 (the 0.021 within-draw seed sd over √5 seeds). **The assignment itself is a real source of variation**, well beyond seed noise, so stage 1's seed-only ±0.024 on A understated its uncertainty. The committed single draw (0.232) sits inside the draw range [0.205, 0.299].
+
+**The protocol gap.** Across all 25 pairings of an A draw with a C draw, the gap is **+0.123** (sd 0.037, range [+0.052, +0.162]). Every pairing is positive: **the gap does not cross zero on any draw.** Stage 1's single-draw figure was +0.110.
+
+**Calibration depends on the draw too.** Across the 5 A draws, ECE before scaling ranges [0.275, 0.449] and after scaling [0.086, 0.210]. The committed split's 0.247 before is **below** that range and its 0.079 after is **below** it. Its 68% reduction compares with 52–69% across draws (mean 61%). **The committed signer-disjoint split is unusually well calibrated.** The README's headline calibration figures come from it and sit at the favourable end of what a signer-disjoint split produces; quote the draw range, not the single draw. Mean ECE falls after scaling on all 15 draws across A, C and D, but the size of the reduction depends on the split as much as on the method.
+
+**Epoch selection (D vs C).** C and D train on identical clips with identical
+seeds, and evaluation consumes no RNG, so their weight trajectories are the same
+and only the validation set that picks the epoch differs. Paired seed by seed, D − C is +0.001 (sd 0.019, range [-0.039, +0.055]); the range includes zero. Averaged per draw it is +0.001, 1% of the C − A gap (under the 25% this write-up treats as small). **Epoch selection on C's larger, test-overlapping validation set is not what drives the gap.**
+
+With validation matched as well, the gap D − A is +0.125 (range
+[+0.051, +0.165]).
+
+**Labelled data, stated precisely.** Stage 1's A, B and C consume 896, 992 and
+970 labelled clips (train + val + cal). Each D draw consumes 896; A draws consume
+895–904. D against A holds all three sets equal, not only the weights.
+
+What D cannot remove: its validation set still shares signers with test
+(28–32 per draw). That overlap is inherent to WLASL's standard split.

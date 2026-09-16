@@ -16,3 +16,6 @@ __pycache__/
 .venv/
 venv/
 data/nslt_100.json
+
+# ---- in-progress checkpoints ----
+data/*.partial.json
