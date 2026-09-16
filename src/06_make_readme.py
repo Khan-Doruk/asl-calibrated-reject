@@ -208,16 +208,31 @@ behaviour, not accuracy, and a weak model makes the overconfidence legible.
 
 ---
 
-## Environment and how to re-run
+## Getting set up (start here if you just cloned this)
 
-Windows 11, Python 3.12 in a venv (MediaPipe has no 3.14 wheel, and the system
-Python here is 3.14).
+**Python 3.12.** MediaPipe has no 3.13/3.14 wheel yet, so a newer Python fails at
+`pip install`. Any OS is fine; this was developed on Windows 11.
 
 ```
-pip install mediapipe opencv-python numpy matplotlib scikit-learn torch
+python3.12 -m venv .venv
+# Windows:   .venv/Scripts/Activate.ps1
+# mac/linux: source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Installed versions are pinned in `requirements.txt`.
+### Just want the figures and numbers? (no download, seconds)
+
+Everything needed is already committed:
+
+```
+python src/05_figures.py      # regenerates both figures
+python src/06_make_readme.py  # regenerates this README
+```
+
+### Want to reproduce from raw video? (~10 min, ~481 MB)
+
+`src/01` downloads the clip subset; `src/02` fetches the MediaPipe model bundles
+automatically on first run. Nothing is manual.
 
 ```
 python src/01_select_and_download.py   # ~1 min, 481 MB to WLASL_VIDEO_DIR
@@ -228,8 +243,21 @@ python src/05_figures.py
 python src/06_make_readme.py
 ```
 
-Videos are cached outside this folder (default `Z:\\wlasl_cache`, override with
-`WLASL_VIDEO_DIR`), so no video is ever written inside the repository.
+Clips are cached **outside the repository** at `~/.cache/wlasl_clips` by
+default, so no video is ever committed and re-running costs nothing. Point it
+elsewhere (external drive, shared scratch disk) with `WLASL_VIDEO_DIR`:
+
+```
+# Windows PowerShell
+$env:WLASL_VIDEO_DIR = "D:/wlasl_clips"
+# mac/linux
+export WLASL_VIDEO_DIR=/mnt/scratch/wlasl_clips
+```
+
+**Teammates:** if one of you has already run `src/02`, sharing that
+`data/landmarks.npz` directly lets everyone else skip steps 01-02 and start at
+`src/03`. Pass it around privately - keep it off GitHub, it is WLASL-derived
+(see [DATA.md](DATA.md)).
 
 **WLASL is under the Computational Use of Data Agreement (C-UDA-1.0) - academic
 and non-commercial use only.** No dataset content is redistributed here: the

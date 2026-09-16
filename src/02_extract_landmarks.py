@@ -16,7 +16,8 @@ import numpy as np, cv2
 from concurrent.futures import ProcessPoolExecutor
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-VIDEO_DIR = pathlib.Path(os.environ.get("WLASL_VIDEO_DIR", r"Z:\wlasl_cache"))
+VIDEO_DIR = pathlib.Path(os.environ.get(
+    "WLASL_VIDEO_DIR", pathlib.Path.home() / ".cache" / "wlasl_clips"))
 # MediaPipe's C++ model loader cannot open paths with non-ASCII characters
 # (this project lives under "Masaustu"), so models are staged to an ASCII path.
 MODEL_DIR = pathlib.Path(tempfile.gettempdir()) / "aslcal_models"
@@ -24,6 +25,37 @@ T = 24               # frames sampled per clip
 RES = 512            # square resize fed to MediaPipe
 POSE_KEEP = list(range(25))   # upper body: face, shoulders, elbows, wrists, hips
 FEAT_DIM = len(POSE_KEEP) * 3 + 2 * (21 * 3 + 3 + 1)
+
+MODEL_URLS = {
+    "hand_landmarker.task":
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
+        "hand_landmarker/float16/latest/hand_landmarker.task",
+    "pose_landmarker_lite.task":
+        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+        "pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+}
+
+
+def ensure_models():
+    """Download the MediaPipe bundles if absent, then stage them to an ASCII path.
+
+    The bundles are Google's (Apache-2.0) and are not redistributed in this repo,
+    so a fresh clone fetches them here (~14 MB, once). Staging to an ASCII path is
+    required because MediaPipe's C++ loader cannot open non-ASCII paths.
+    """
+    import urllib.request
+    root_models = ROOT / "models"
+    root_models.mkdir(exist_ok=True)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    for name, url in MODEL_URLS.items():
+        src = root_models / name
+        if not src.exists() or src.stat().st_size < 100_000:
+            print("downloading %s ..." % name, flush=True)
+            urllib.request.urlretrieve(url, src)
+        if not (MODEL_DIR / name).exists():
+            shutil.copy(src, MODEL_DIR / name)
+    print("models ready at", MODEL_DIR, flush=True)
+
 
 _hl = _pl = None
 
@@ -103,12 +135,7 @@ def process(rec):
     return vid, seq, pose_hits / T, hand_hits / T
 
 def main():
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    for m in ('hand_landmarker.task', 'pose_landmarker_lite.task'):
-        dst = MODEL_DIR / m
-        if not dst.exists():
-            shutil.copy(ROOT / 'models' / m, dst)
-    print('models staged at', MODEL_DIR, flush=True)
+    ensure_models()
     meta = {i["video_id"]: i for g in json.load(open(ROOT / "data" / "WLASL_v0.3.json"))
             for i in g["instances"]}
     sel = json.load(open(ROOT / "data" / "subset.json"))

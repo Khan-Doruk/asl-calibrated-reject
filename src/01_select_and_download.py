@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-VIDEO_DIR = pathlib.Path(os.environ.get("WLASL_VIDEO_DIR", r"Z:\wlasl_cache"))
+VIDEO_DIR = pathlib.Path(os.environ.get(
+    "WLASL_VIDEO_DIR", pathlib.Path.home() / ".cache" / "wlasl_clips"))
 BASE = "https://huggingface.co/datasets/Voxel51/WLASL/resolve/main/"
 N_CLASSES = 100
 
