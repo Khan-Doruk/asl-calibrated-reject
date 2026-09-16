@@ -136,6 +136,10 @@ def process(rec):
 
 def main():
     ensure_models()
+    annot = ROOT / "data" / "WLASL_v0.3.json"
+    if not annot.exists() or not (ROOT / "data" / "subset.json").exists():
+        raise SystemExit("Run src/01_select_and_download.py first - it fetches the "
+                         "WLASL annotations and the clip subset this step needs.")
     meta = {i["video_id"]: i for g in json.load(open(ROOT / "data" / "WLASL_v0.3.json"))
             for i in g["instances"]}
     sel = json.load(open(ROOT / "data" / "subset.json"))

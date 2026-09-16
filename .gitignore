@@ -4,6 +4,7 @@ data/landmarks.npz
 data/matched.json
 data/subset.json
 data/hf_files.json
+data/hf_api.json
 data/download_failures.json
 
 # ---- third-party model bundles (Google/Apache-2.0); fetched by setup ----
