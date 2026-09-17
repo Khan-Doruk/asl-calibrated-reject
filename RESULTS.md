@@ -206,3 +206,102 @@ With validation matched as well, the gap D − A is +0.125 (range
 
 What D cannot remove: its validation set still shares signers with test
 (28–32 per draw). That overlap is inherent to WLASL's standard split.
+
+---
+
+## Stage 2 — input quality
+
+All conditions use the committed signer-disjoint split, the committed model and
+estimators, and 5 seeds. Each changes one input variable against a reference.
+
+**Reference, trained in this stage.** Torch CPU numerics depend on thread count
+(stage 1b), and stage 2 trains in parallel single-thread processes for speed, so
+the reference is re-trained here rather than read from the committed run:
+base_T24 scores 0.233 ± 0.020 (committed, 24 threads: 0.232).
+Every delta is against a reference trained under identical settings.
+
+**What "established" means here.** A delta is paired seed by seed. It counts as
+established only if it has the same sign on all 5 seeds; with no real effect
+that happens by chance 6.2% of the time. Everything else is reported as not
+established.
+
+### 2a — hand detection
+
+**Diagnosis first.** Across the pool, 0.693 of sampled frames have
+at least one hand. The shortfall is at the ends of clips: **0.39** in
+the first sixth of frames, **0.86** in the middle, **0.34**
+in the last sixth. That is the signature of hands at rest outside the frame
+before and after the sign, not of a detector failing mid-sign. It also tracks the
+source: aslsearch clips 0.44, signingsavvy 1.00.
+
+The bbox crop is not the cause. Padding it gained at most +0.003 hand rate on
+the subset. 1 clip's annotation does not fit its video's resolution (hand rate
+0.04); it is a single bad annotation, recorded and left as is.
+
+**Sweep** on a 150-clip subset (the 60 worst clips plus 90 at random), one
+setting changed at a time:
+
+| tag | change | hand rate (Δ) | pose rate | worst-60 | random-90 | start / middle / end | wall |
+|---|---|---|---|---|---|---|---|
+| sub_base | src/02 settings | 0.579 (+0.000) | 0.983 | 0.297 | 0.767 | 0.31 / 0.72 / 0.29 | 42s |
+| sub_pad10 | bbox padded 10% per side | 0.582 (+0.003) | 0.984 | 0.307 | 0.765 | 0.31 / 0.72 / 0.29 | 43s |
+| sub_pad20 | bbox padded 20% per side | 0.573 (-0.006) | 0.987 | 0.307 | 0.750 | 0.29 / 0.72 / 0.28 | 43s |
+| sub_conf01 | hand confidence 0.3 -> 0.1 | 0.608 (+0.030) | 0.983 | 0.333 | 0.792 | 0.34 / 0.75 / 0.31 | 44s |
+| sub_res640 | resize 512 -> 640 | 0.577 (-0.001) | 0.983 | 0.296 | 0.765 | 0.31 / 0.72 / 0.29 | 43s |
+| sub_posefull | pose lite -> full | 0.579 (+0.000) | 0.983 | 0.297 | 0.767 | 0.31 / 0.72 / 0.29 | 47s |
+
+Selection rule: highest subset hand rate among variants gaining >= 0.01 hand rate over sub_base without losing more than 0.01 pose rate. Winner: **sub_conf01**. On the full pool it raises the
+hand rate from 0.693 to 0.729, with pose rate
+0.990 → 0.990.
+
+**Does it move accuracy?** Detection rate is a proxy; this is the result.
+
+| condition | top-1 | ECE before | ECE after | Δ top-1 vs base_T24 |
+|---|---|---|---|---|
+| base_T24 | 0.233 ± 0.020 | 0.274 ± 0.020 | 0.073 ± 0.005 | reference |
+| det_best_T24 | 0.251 ± 0.029 | 0.270 ± 0.032 | 0.073 ± 0.014 | +0.018 [-0.045, +0.062] — crosses zero: **not established** |
+
+**The detection gain did not reliably buy accuracy.** A higher hand-detection rate is not, on its own, a better input here. Δ ECE after scaling: +0.001 [-0.019, +0.023] — crosses zero: **not established**.
+
+### 2b — frames per clip
+
+Container metadata overstates clip length: **219** clips decode fewer
+frames than they report (median shortfall 1, max 6). src/02 samples
+indices from the reported count, so the last indices do not exist and those clips
+are end-padded with their final frame **even at T=24** — already true of the
+committed baseline. Longer T adds genuine short clips on top: reported lengths run
+19–195 frames (median 63), and
+345 clips report fewer than 48. Padding is at the **end**, a frozen last
+frame, not frames duplicated evenly through the sign.
+
+| T | hand rate | clips end-padded | padded frames | worst clip padded | top-1 | ECE before | ECE after | Δ top-1 vs T=24 |
+|---|---|---|---|---|---|---|---|---|
+| T=24 | 0.693 | 226 | 277 | 21% | 0.233 ± 0.020 | 0.274 ± 0.020 | 0.073 ± 0.005 | reference |
+| T=32 | 0.693 | 295 | 669 | 41% | 0.230 ± 0.007 | 0.296 ± 0.050 | 0.106 ± 0.014 | -0.003 [-0.022, +0.013] — crosses zero: **not established** |
+| T=48 | 0.668 | 448 | 4328 | 60% | 0.260 ± 0.007 | 0.292 ± 0.040 | 0.096 ± 0.015 | +0.027 [+0.004, +0.058] — same sign on every seed |
+
+T=48 is best on mean accuracy (+0.027 [+0.004, +0.058] — same sign on every seed), so 2c runs at T=48. Longer T is not a clean single change under src/02's sampling: it also raises the share of end-padded frames, so the T=48 gain is measured *despite* more padding, not independently of it.
+
+### 2c — normalization, at T=48
+
+Each variant changes one thing against T48 and is computed from saved raw
+coordinates (no re-extraction).
+
+| variant | top-1 | ECE before | ECE after | Δ top-1 vs T48 |
+|---|---|---|---|---|
+| T48 | 0.260 ± 0.007 | 0.292 ± 0.040 | 0.096 ± 0.015 | reference |
+| clip_scale | 0.258 ± 0.010 | 0.311 ± 0.036 | 0.103 ± 0.012 | -0.002 [-0.022, +0.009] — crosses zero: **not established** |
+| velocity | 0.231 ± 0.022 | 0.283 ± 0.042 | 0.104 ± 0.016 | -0.029 [-0.054, -0.004] — same sign on every seed |
+| mirror | 0.287 ± 0.013 | 0.313 ± 0.036 | 0.087 ± 0.007 | +0.027 [+0.009, +0.045] — same sign on every seed |
+
+- *clip_scale* — per-frame shoulder width varies by a median 2.8% within a clip (p90 5.9%), so there was little jitter to remove: -0.002 [-0.022, +0.009] — crosses zero: **not established**.
+- *velocity* — 418 input dims instead of 209: -0.029 [-0.054, -0.004] — same sign on every seed. **It hurts.** Frames with no pose are all-zero, so their differences spike, and the doubled input has to be learned from the same small training set; this variant does not separate those causes.
+- *mirror* — decided per signer: 8 of 68 signers (57 clips) mirrored. Per clip the dominance vote is unreliable: 42 of 49 signers with 3+ clips get mixed per-clip votes (median minority share 25%), which is detection noise, not signers switching hands. +0.027 [+0.009, +0.045] — same sign on every seed.
+
+### What stage 2 means
+
+Established single-step accuracy gains: **T48 (+0.027), mirror (+0.027)**. The best measured input configuration is **mirror** (T=48 + per-signer mirroring): 0.287 ± 0.013 against base_T24's 0.233 ± 0.020, a direct paired difference of **+0.054** [+0.018, +0.085], same sign on every seed.
+
+Every delta here is on **one** split — the committed signer-disjoint draw. Stage 1b showed that re-drawing that split moves accuracy by sd 0.040; the stacked stage 2 gain (+0.054) is comparable to that, and each single step (+0.027 at most) is smaller. The paired design (same split, same seeds) is what makes the comparisons meaningful at all; whether the gains survive a different split is untested.
+
+**For the roadmap.** Stacked, the stage 2 inputs (T=48 + per-signer mirroring) move the reference by +0.054 on every seed, past this write-up's 0.05 threshold for a roadmap-relevant gain. That is real but modest: the model stays at 0.287, far below PLAN.md's stage 3 target, which still has to come from the model rather than preprocessing. Stage 3 should build on these inputs. **The accuracy credibility risk is narrowed slightly by stage 2**, and only on one split: the gain is comparable to stage 1b's split-to-split sd, so it needs checking on re-drawn splits before stage 3 relies on it. A higher hand-detection rate, on its own, bought nothing established.

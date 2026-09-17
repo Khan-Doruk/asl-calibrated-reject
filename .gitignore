@@ -19,3 +19,6 @@ data/nslt_100.json
 
 # ---- in-progress checkpoints ----
 data/*.partial.json
+
+# ---- stage 2: WLASL-derived landmark variants (never commit) ----
+data/landmarks_*.npz

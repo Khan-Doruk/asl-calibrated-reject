@@ -4,6 +4,7 @@ Same discipline as src/06_make_readme.py. Reads whichever stage files exist and
 writes the sections it can; missing stages are skipped rather than invented.
 """
 import json, pathlib
+import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 S1 = ROOT / "data" / "stage1_split_comparison.json"
@@ -336,6 +337,229 @@ What D cannot remove: its validation set still shares signers with test
 """
 
 
+def stage2_section(d, s1b):
+    C, dg, sw, ex, dec, meta = (d["conditions"], d["diagnosis"], d["sweep"], d["extraction"],
+                                d["decisions"], d["meta"])
+    n_seeds = len(meta["seeds"])
+    p_null = 2 * 0.5 ** n_seeds
+
+    def delta(n, metric="before_acc"):
+        return C[n]["delta_vs_ref"][metric]
+
+    def est(n, metric="before_acc"):
+        return delta(n, metric)["same_sign_all_seeds"]
+
+    def verdict(n, metric="before_acc"):
+        x = delta(n, metric)
+        tail = "same sign on every seed" if x["same_sign_all_seeds"] else "crosses zero: **not established**"
+        return f"{x['mean']:+.3f} [{x['min']:+.3f}, {x['max']:+.3f}] — {tail}"
+
+    def row(n, label, extra="", as_ref=False):
+        a = C[n]["agg"]
+        v = verdict(n) if C[n].get("delta_vs_ref") and not as_ref else "reference"
+        return (f"| {label} | {extra}{pm(a['before_acc'])} | {pm(a['before_ece'])} | {pm(a['after_ece'])} | {v} |")
+
+    ref = C["base_T24"]["agg"]
+    committed = meta["committed_reference"]
+
+    # ---- 2a
+    srcs = dg["by_source"]
+    lo_src = min(srcs, key=lambda s: srcs[s]["hand_rate"])
+    hi_src = max(srcs, key=lambda s: srcs[s]["hand_rate"])
+    V = sw["variants"]; b = V["sub_base"]
+    sweep_rows = "\n".join(
+        f"| {t} | {r['description']} | {r['hand_rate']:.3f} ({r['hand_rate'] - b['hand_rate']:+.3f}) | "
+        f"{r['pose_rate']:.3f} | {r['hand_rate_worst60']:.3f} | {r['hand_rate_random90']:.3f} | "
+        f"{r['hand_rate_first_sixth']:.2f} / {r['hand_rate_middle']:.2f} / {r['hand_rate_last_sixth']:.2f} | "
+        f"{r['wall_time_s']:.0f}s |" for t, r in V.items())
+    pad_gain = max(V[t]["hand_rate"] for t in ("sub_pad10", "sub_pad20") if t in V) - b["hand_rate"]
+    full_b = ex["base"]["per_T"]["24"]; full_d = ex["det_best"]["per_T"]["24"]
+    bb = dg["bbox_beyond_frame"]
+
+    if est("det_best_T24") and delta("det_best_T24")["mean"] > 0:
+        a_conc = "The detection gain **did** buy accuracy."
+    else:
+        a_conc = ("**The detection gain did not reliably buy accuracy.** A higher hand-detection rate is "
+                  "not, on its own, a better input here.")
+
+    # ---- 2b
+    fm = dg["frame_count_metadata"]
+    bestT = dec["best_T"]
+    tname = {24: "base_T24", 32: "T32", 48: "T48"}
+    t_rows = "\n".join(
+        f"| T={T} | {ex['base']['per_T'][str(T)]['hand_rate']:.3f} | {ex['base']['per_T'][str(T)]['clips_padded']} | "
+        f"{ex['base']['per_T'][str(T)]['padded_frames_total']} | {ex['base']['per_T'][str(T)]['max_pad_fraction']:.0%} | "
+        + row(tname[T], "", "").split("| ", 2)[2] for T in (24, 32, 48))
+    if bestT == 24:
+        b_conc = "No longer sequence beat T=24, so 2c runs at T=24."
+    else:
+        b_conc = (f"T={bestT} is best on mean accuracy ({verdict(tname[bestT])}), so 2c runs at T={bestT}. "
+                  f"Longer T is not a clean single change under src/02's sampling: it also raises the share of "
+                  f"end-padded frames, so the T={bestT} gain is measured *despite* more padding, not independently of it.")
+
+    # ---- 2c
+    names = [n for n in ("clip_scale", "velocity", "mirror") if n in C]
+    c_ref = C[names[0]]["spec"]["ref"] if names else None
+    fi = {n: C[n]["feature_info"] for n in names}
+    c_rows = "\n".join(row(n, n) for n in names)
+    notes = []
+    if "clip_scale" in fi:
+        notes.append(f"*clip_scale* — per-frame shoulder width varies by a median "
+                     f"{fi['clip_scale']['per_frame_shoulder_width_cv_median']:.1%} within a clip "
+                     f"(p90 {fi['clip_scale']['per_frame_shoulder_width_cv_p90']:.1%}), so there was little "
+                     f"jitter to remove: {verdict('clip_scale')}.")
+    if "velocity" in fi:
+        hurts = est("velocity") and delta("velocity")["mean"] < 0
+        notes.append(f"*velocity* — {fi['velocity']['feature_dim']} input dims instead of "
+                     f"{C[c_ref]['feature_info']['feature_dim']}: {verdict('velocity')}."
+                     + (" **It hurts.** Frames with no pose are all-zero, so their differences spike, and "
+                        "the doubled input has to be learned from the same small training set; this variant "
+                        "does not separate those causes." if hurts else ""))
+    if "mirror" in fi:
+        m = fi["mirror"]
+        notes.append(
+            f"*mirror* — decided per signer: {m['signers_mirrored']} of {m['signers_total']} signers "
+            f"({m['clips_mirrored']} clips) mirrored. Per clip the dominance vote is unreliable: "
+            f"{m['signers_3plus_with_mixed_clip_votes']} of {m['signers_with_3plus_clips']} signers with 3+ clips "
+            f"get mixed per-clip votes (median minority share {m['mixed_signers_median_minority_share']:.0%}), which "
+            f"is detection noise, not signers switching hands. {verdict('mirror')}.")
+
+    # ---- context and roadmap
+    all_named = ["det_best_T24", "T32", "T48"] + names
+    established_pos = [n for n in all_named if est(n) and delta(n)["mean"] > 0]
+    best_n = max(all_named, key=lambda n: delta(n)["mean"])
+    best_gain = delta(best_n)["mean"]
+    best_ref = C[best_n]["delta_vs_ref"]["ref"]
+    # the best measured input configuration, paired seed by seed against base_T24 directly
+    top = max(C, key=lambda n: C[n]["agg"]["before_acc"][0])
+    cum = [a["before"]["acc"] - b["before"]["acc"]
+           for a, b in zip(C[top]["per_seed"], C["base_T24"]["per_seed"])]
+    cum_mean, cum_same = float(np.mean(cum)), all(x > 0 for x in cum) or all(x < 0 for x in cum)
+    chain = {"mirror": "T=48 + per-signer mirroring", "clip_scale": "T=48 + clip scale",
+             "velocity": "T=48 + velocity", "T48": "T=48", "T32": "T=32",
+             "det_best_T24": "hand confidence 0.1", "base_T24": "the reference itself"}.get(top, top)
+    cum_txt = (f"The best measured input configuration is **{top}** ({chain}): "
+               f"{pm(C[top]['agg']['before_acc'])} against base_T24's {pm(C['base_T24']['agg']['before_acc'])}, "
+               f"a direct paired difference of **{cum_mean:+.3f}** [{min(cum):+.3f}, {max(cum):+.3f}]"
+               + (", same sign on every seed." if cum_same else ", which crosses zero."))
+    draw_sd = s1b["summary"]["draw_means"]["acc"]["A"]["sd"] if s1b else None
+    ctx = ""
+    if draw_sd is not None:
+        ctx = (f"Every delta here is on **one** split — the committed signer-disjoint draw. Stage 1b showed "
+               f"that re-drawing that split moves accuracy by sd {draw_sd:.3f}; the stacked stage 2 gain "
+               f"({cum_mean:+.3f}) is {'smaller than' if abs(cum_mean) < draw_sd else 'comparable to'} that, and "
+               f"each single step ({best_gain:+.3f} at most) is smaller. The paired design (same split, same seeds) is what makes the "
+               f"comparisons meaningful at all; whether the gains survive a different split is untested.")
+    est_txt = (", ".join(f"{n} ({delta(n)['mean']:+.3f})" for n in established_pos)
+               if established_pos else "none")
+    MATERIAL = 0.05   # a gain this large would change the roadmap; stated in the text
+    if not (cum_same and cum_mean >= MATERIAL):
+        roadmap = (f"**For the roadmap.** Input quality is not where the accuracy gap lives. The best measured "
+                   f"input configuration moves the reference by {cum_mean:+.3f}, short of this write-up's "
+                   f"{MATERIAL:.2f} threshold for an established, roadmap-relevant gain. PLAN.md's stage 3 "
+                   f"target has to come from the model, not from preprocessing, and stage 1 already showed it "
+                   f"cannot be checked against a published benchmark on this pool. **The accuracy credibility "
+                   f"risk is unchanged by stage 2.** What stage 2 settles is which inputs stage 3 should build "
+                   f"on, and that a higher hand-detection rate is not by itself evidence of better inputs.")
+    else:
+        roadmap = (f"**For the roadmap.** Stacked, the stage 2 inputs ({chain}) move the reference by "
+                   f"{cum_mean:+.3f} on every seed, past this write-up's {MATERIAL:.2f} threshold for a "
+                   f"roadmap-relevant gain. That is real but modest: the model stays at "
+                   f"{C[top]['agg']['before_acc'][0]:.3f}, far below PLAN.md's stage 3 target, which still has to come "
+                   f"from the model rather than preprocessing. Stage 3 should build on these inputs. **The "
+                   f"accuracy credibility risk is narrowed slightly by stage 2**, and only on one split: the gain "
+                   f"is {'smaller than' if draw_sd is not None and cum_mean < draw_sd else 'comparable to'} stage 1b's "
+                   f"split-to-split sd, so it needs checking on re-drawn splits before stage 3 relies on it. A "
+                   f"higher hand-detection rate, on its own, bought nothing established.")
+
+    return f"""## Stage 2 — input quality
+
+All conditions use the committed signer-disjoint split, the committed model and
+estimators, and {n_seeds} seeds. Each changes one input variable against a reference.
+
+**Reference, trained in this stage.** Torch CPU numerics depend on thread count
+(stage 1b), and stage 2 trains in parallel single-thread processes for speed, so
+the reference is re-trained here rather than read from the committed run:
+base_T24 scores {pm(ref['before_acc'])} (committed, 24 threads: {committed['before_acc'][0]:.3f}).
+Every delta is against a reference trained under identical settings.
+
+**What "established" means here.** A delta is paired seed by seed. It counts as
+established only if it has the same sign on all {n_seeds} seeds; with no real effect
+that happens by chance {p_null:.1%} of the time. Everything else is reported as not
+established.
+
+### 2a — hand detection
+
+**Diagnosis first.** Across the pool, {dg['overall_hand_rate_T24']:.3f} of sampled frames have
+at least one hand. The shortfall is at the ends of clips: **{dg['hand_rate_first_sixth']:.2f}** in
+the first sixth of frames, **{dg['hand_rate_middle']:.2f}** in the middle, **{dg['hand_rate_last_sixth']:.2f}**
+in the last sixth. That is the signature of hands at rest outside the frame
+before and after the sign, not of a detector failing mid-sign. It also tracks the
+source: {lo_src} clips {srcs[lo_src]['hand_rate']:.2f}, {hi_src} {srcs[hi_src]['hand_rate']:.2f}.
+
+The bbox crop is not the cause. Padding it gained at most {pad_gain:+.3f} hand rate on
+the subset. {bb['clips']} clip's annotation does not fit its video's resolution (hand rate
+{', '.join(f'{r:.2f}' for r in bb['hand_rates'])}); it is a single bad annotation, recorded and left as is.
+
+**Sweep** on a {sw['subset_clips']}-clip subset (the 60 worst clips plus 90 at random), one
+setting changed at a time:
+
+| tag | change | hand rate (Δ) | pose rate | worst-60 | random-90 | start / middle / end | wall |
+|---|---|---|---|---|---|---|---|
+{sweep_rows}
+
+Selection rule: {sw['rule']}. Winner: **{sw['best']}**. On the full pool it raises the
+hand rate from {full_b['hand_rate']:.3f} to {full_d['hand_rate']:.3f}, with pose rate
+{full_b['pose_rate']:.3f} → {full_d['pose_rate']:.3f}.
+
+**Does it move accuracy?** Detection rate is a proxy; this is the result.
+
+| condition | top-1 | ECE before | ECE after | Δ top-1 vs base_T24 |
+|---|---|---|---|---|
+{row('base_T24', 'base_T24')}
+{row('det_best_T24', 'det_best_T24')}
+
+{a_conc} Δ ECE after scaling: {verdict('det_best_T24', 'after_ece')}.
+
+### 2b — frames per clip
+
+Container metadata overstates clip length: **{fm['clips_decoding_fewer_than_reported']}** clips decode fewer
+frames than they report (median shortfall {fm['median_shortfall']:.0f}, max {fm['max_shortfall']}). src/02 samples
+indices from the reported count, so the last indices do not exist and those clips
+are end-padded with their final frame **even at T=24** — already true of the
+committed baseline. Longer T adds genuine short clips on top: reported lengths run
+{fm['reported_frames']['min']}–{fm['reported_frames']['max']} frames (median {fm['reported_frames']['median']:.0f}), and
+{fm['clips_reporting_fewer_than']['48']} clips report fewer than 48. Padding is at the **end**, a frozen last
+frame, not frames duplicated evenly through the sign.
+
+| T | hand rate | clips end-padded | padded frames | worst clip padded | top-1 | ECE before | ECE after | Δ top-1 vs T=24 |
+|---|---|---|---|---|---|---|---|---|
+{t_rows}
+
+{b_conc}
+
+### 2c — normalization, at T={bestT}
+
+Each variant changes one thing against {c_ref} and is computed from saved raw
+coordinates (no re-extraction).
+
+| variant | top-1 | ECE before | ECE after | Δ top-1 vs {c_ref} |
+|---|---|---|---|---|
+{row(c_ref, c_ref, as_ref=True)}
+{c_rows}
+
+{chr(10).join('- ' + x for x in notes)}
+
+### What stage 2 means
+
+Established single-step accuracy gains: **{est_txt}**. {cum_txt}
+
+{ctx}
+
+{roadmap}
+"""
+
+
 def main():
     parts = ["""# Results
 
@@ -352,7 +576,10 @@ Every number is read from a file; none is typed by hand.
     else:
         print("no stage 1b JSON, skipping")
     if S2.exists():
-        print("stage 2 JSON present but its section is not implemented yet")
+        parts.append(stage2_section(json.load(open(S2)),
+                                    json.load(open(S1B)) if S1B.exists() else None))
+    else:
+        print("no stage 2 JSON, skipping")
 
     (ROOT / "RESULTS.md").write_text("\n---\n\n".join(parts), encoding="utf-8")
     print(f"wrote RESULTS.md ({sum(len(p) for p in parts)} chars)")
